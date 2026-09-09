@@ -1,0 +1,30 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install test runtime
+        run: brew list lua >/dev/null 2>&1 || brew install lua
+      - name: Run isolated checks
+        run: python3 scripts/check.py
+      - name: Build distribution archives
+        run: python3 scripts/build.py
+      - uses: actions/upload-artifact@v7
+        with:
+          name: AgentType-packages
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7

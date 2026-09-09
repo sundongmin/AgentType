@@ -1,0 +1,74 @@
+#!/bin/zsh
+emulate -L zsh
+setopt NO_UNSET PIPE_FAIL
+
+find_hs() {
+    local candidate
+    for candidate in "${GHOSTTY_IM_HS:-}" /opt/homebrew/bin/hs /usr/local/bin/hs \
+        /Applications/Hammerspoon.app/Contents/Frameworks/hs/hs \
+        "$HOME/Applications/Hammerspoon.app/Contents/Frameworks/hs/hs"; do
+        if [[ -n $candidate && -x $candidate ]]; then REPLY=$candidate; return 0; fi
+    done
+    candidate=$(whence -p hs 2>/dev/null) || return 1
+    [[ -x $candidate ]] || return 1
+    REPLY=$candidate
+}
+if ! find_hs; then
+    print -u2 -- '找不到 Hammerspoon CLI。请安装 Hammerspoon，或设置 GHOSTTY_IM_HS。'
+    exit 1
+fi
+hs_bin=$REPLY
+action=${1:-help}
+shift 2>/dev/null || true
+case $action in
+    resolve)
+        [[ $# == 1 && $1 =~ '^/dev/ttys[[:alnum:]]+$' ]] || exit 2
+        code="local s=spoon and spoon.GhosttyInputMethod; return s and s:resolveTTY(\"$1\") or ''"
+        ;;
+    set)
+        [[ $# == 2 && -n $1 && $1 != *[^a-zA-Z0-9-]* && ($2 == agent || $2 == terminal) ]] || exit 2
+        code="local s=spoon and spoon.GhosttyInputMethod; return s and s:setState(\"$1\",\"$2\") or false"
+        ;;
+    status)
+        code='local s=spoon and spoon.GhosttyInputMethod; return hs.inspect({plugin=s and s:status() or "NOT_LOADED", currentSource=hs.keycodes.currentSourceID(), layouts=hs.keycodes.layouts(true), methods=hs.keycodes.methods(true)})'
+        ;;
+    doctor)
+        code='local s=spoon and spoon.GhosttyInputMethod
+local enabled={}
+for _,id in ipairs(hs.keycodes.layouts(true)) do enabled[id]=true end
+for _,id in ipairs(hs.keycodes.methods(true)) do enabled[id]=true end
+local running=false
+for _,app in ipairs(hs.application.runningApplications()) do
+    if app:bundleID()=="com.mitchellh.ghostty" then running=true; break end
+end
+local ok,result=false,"Ghostty is not running"
+if running then
+    ok,result=hs.osascript.applescript([[with timeout of 2 seconds
+tell application "Ghostty"
+    set pairsList to {id, tty} of every terminal
+    if (count of windows) > 0 then
+        set focusedID to id of focused terminal of selected tab of front window
+    end if
+    return "Ghostty interfaces OK"
+end tell
+end timeout]])
+end
+return hs.inspect({plugin=s and s:status() or "NOT_LOADED", currentSource=hs.keycodes.currentSourceID(),
+terminalSourceEnabled=s and enabled[s.terminalSource] or false,
+agentSourceEnabled=s and enabled[s.agentSource] or false,
+ghosttyRunning=running, ghosttyQueryOK=ok, ghosttyQueryResult=result})'
+        ;;
+    sources)
+        code='return hs.inspect({layouts=hs.keycodes.layouts(true), methods=hs.keycodes.methods(true), current=hs.keycodes.currentSourceID()})'
+        ;;
+    *)
+        print -- '用法: ghostty-im {doctor|status|sources|resolve TTY|set ID agent|set ID terminal}'
+        exit 0
+        ;;
+esac
+reply=$("$hs_bin" -q -t 2 -c "$code") || exit 1
+case $action in
+    set) [[ $reply == true ]] || exit 1 ;;
+    resolve) [[ -n $reply && $reply != *[^a-zA-Z0-9-]* ]] || exit 1; print -r -- "$reply" ;;
+    *) print -r -- "$reply" ;;
+esac

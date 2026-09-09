@@ -1,0 +1,14 @@
+# Build products and local files
+dist/
+work/
+.DS_Store
+._*
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.env.*
+*.log
+*.backup*
+.idea/
+.vscode/
